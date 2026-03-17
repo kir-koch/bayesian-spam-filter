@@ -1,0 +1,8 @@
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+artifacts*/
+.DS_Store
+.vscode/
+find_incorrect.py
