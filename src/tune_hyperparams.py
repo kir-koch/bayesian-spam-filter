@@ -16,9 +16,17 @@ def log_loss(model, df):
     return float(losses.mean())
 
 
-# mode — tuned hyperparam: 'alpha' or 'spam_threshold'
-# default — value for other hyperparam: float between 0 and 1
-def coarse_to_fine(train_df, val_df, bounds, mode, default, loss_funct):
+# param_name — tuned hyperparam name, e.g. 'alpha', 'c', or 'spam_threshold'
+def coarse_to_fine(
+    train_df,
+    val_df,
+    bounds,
+    param_name,
+    train_kwargs,
+    loss_funct,
+    model_class=NaiveBayes,
+    space='linear',
+):
     """Iteratively shrink the search interval around the best grid point"""
     if len(bounds) != 2:
         raise ValueError('bounds must contain exactly two numbers: [start, end]')
@@ -26,9 +34,9 @@ def coarse_to_fine(train_df, val_df, bounds, mode, default, loss_funct):
     start, end = float(bounds[0]), float(bounds[1])
     if start >= end:
         raise ValueError('bounds must satisfy start < end')
-    if mode == 'alpha' and start <= 0:
-        raise ValueError('alpha bounds must be > 0 for geometric search')
-    if mode == 'spam_threshold' and (start < 0 or end > 1):
+    if space == 'geometric' and start <= 0:
+        raise ValueError('geometric search bounds must be > 0')
+    if param_name == 'spam_threshold' and (start < 0 or end > 1):
         raise ValueError('spam_threshold bounds must be within [0, 1]')
 
     def optimize_interval(start, end, space):
@@ -38,11 +46,10 @@ def coarse_to_fine(train_df, val_df, bounds, mode, default, loss_funct):
         best_bounds = [start, end]
 
         for i, hyperparam in enumerate(grid):
-            model = NaiveBayes()
-            if mode == 'alpha':
-                model.train(train_df, hyperparam, default)
-            elif mode == 'spam_threshold':
-                model.train(train_df, default, hyperparam)
+            model = model_class()
+            current_kwargs = dict(train_kwargs)
+            current_kwargs[param_name] = float(hyperparam)
+            model.train(train_df, **current_kwargs)
 
             cur_score = loss_funct(model, val_df)
             if cur_score < opt_score:
@@ -52,12 +59,12 @@ def coarse_to_fine(train_df, val_df, bounds, mode, default, loss_funct):
                 best_bounds[1] = grid[min(NUM_POINTS - 1, i + 1)]
         return best_bounds
 
-    if mode == 'alpha':
+    if space == 'geometric':
         space = np.geomspace
-    elif mode == 'spam_threshold':
+    elif space == 'linear':
         space = np.linspace
     else:
-        raise ValueError("mode must be either 'alpha' or 'spam_threshold'")
+        raise ValueError("space must be either 'geometric' or 'linear'")
 
     bounds = optimize_interval(start, end, space)
     for _ in range(3):
